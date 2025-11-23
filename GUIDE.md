@@ -1,156 +1,261 @@
-# Cloud Infrastructure Setup Checklist (Creative Force Assessment)
+# Cloud Infrastructure Setup Checklist  
+**Creative Force – DevOps Engineer Assessment 2025**
 
-This checklist outlines all AWS resources required to build the cloud infrastructure for the new service.  
-Each step includes **what to create** and **why**, following industry best practices for production systems.
+This checklist details all AWS components required to deploy the new service composed of:  
+- UI (Docker Image)  
+- API (Docker Image)  
+- PostgreSQL Database  
+- Metrics Collector  
+
+It follows production-grade best practices focusing on scalability, security, observability, and zero-trust networking.
 
 ---
 
-## 1. Create VPC
-**Purpose:** Define the private network boundary for all resources.  
+# 1. Create VPC
+**Purpose:** Private network boundary for all infrastructure resources.
+
 - CIDR: `10.0.0.0/16`
 
 ---
 
-## 2. Create Public Subnets (2 AZs)
-**Purpose:** Host all Internet-facing components.  
-- public-a: `10.0.1.0/24`  
-- public-b: `10.0.2.0/24`  
-**Used for:** Load Balancer, NAT Gateway
+# 2. Create Public Subnets (2 AZs)
+**Purpose:** Host Internet-facing components.
+
+- `public-a`: `10.0.1.0/24`  
+- `public-b`: `10.0.2.0/24`  
+**Used for:** ALB, NAT Gateway, Bastion (optional)
 
 ---
 
-## 3. Create Private Subnets (2 AZs)
-**Purpose:** Host internal workloads that must not be exposed publicly.  
-- private-a: `10.0.3.0/24`  
-- private-b: `10.0.4.0/24`  
-**Used for:** API (EKS/ECS), RDS, Metrics Collector, internal services
+# 3. Create Private Subnets (2 AZs)
+**Purpose:** Host internal workloads (containers, DB, metrics).
+
+- `private-a`: `10.0.3.0/24`  
+- `private-b`: `10.0.4.0/24`  
+**Used for:** API (EKS/ECS), UI containers, Metrics Collector, RDS
 
 ---
 
-## 4. Create Internet Gateway (IGW)
-**Purpose:** Allow public subnets to communicate with the Internet.
+# 4. Create Internet Gateway
+**Purpose:** Allow outbound and inbound Internet connectivity for public subnets.
 
 ---
 
-## 5. Attach IGW to the VPC
-**Purpose:** Activate outbound/inbound Internet access for resources in public subnets.
+# 5. Attach IGW to VPC
+**Purpose:** Activate IGW routing for public resources.
 
 ---
 
-## 6. Create NAT Gateway (in Public Subnet A)
-**Purpose:** Allow private subnets to access the Internet for pulling images, package updates, etc., without exposing them publicly.
+# 6. Create NAT Gateway
+Place in **public-a**.
+
+**Purpose:**  
+Allow private subnets to:  
+- Pull Docker images  
+- Download dependencies  
+- Reach external APIs  
+Without exposing private workloads publicly.
 
 ---
 
-## 7. Create Public Route Table
-**Purpose:** Route public subnet traffic to the Internet.  
-- Route: `0.0.0.0/0 → Internet Gateway`  
-- Associate with: public-a, public-b
+# 7. Create Public Route Table
+- Route: `0.0.0.0/0 → Internet Gateway`
+- Associate with: `public-a`, `public-b`
 
 ---
 
-## 8. Create Private Route Table
-**Purpose:** Allow private subnets to reach the Internet through NAT Gateway.  
-- Route: `0.0.0.0/0 → NAT Gateway`  
-- Associate with: private-a, private-b
+# 8. Create Private Route Table
+- Route: `0.0.0.0/0 → NAT Gateway`
+- Associate with: `private-a`, `private-b`
 
 ---
 
-## 9. Create Security Groups
+# 9. Create Security Groups
 
-### **alb-sg**
-- Inbound: 80/443 from `0.0.0.0/0`  
+## alb-sg
+- Inbound: 80/443 from `0.0.0.0/0`
 - Outbound: allow all  
-**Purpose:** Public entrypoint (UI/API) through ALB.
+**Purpose:** Public entry point for UI and API.
 
-### **api-sg**
-- Inbound: 80/443 from alb-sg  
-- Outbound: 5432 to db-sg  
-**Purpose:** Protect API pods/containers.
+## ui-sg
+- Inbound: 80 from `alb-sg`
+- Outbound: allow all  
+**Purpose:** Serve UI traffic securely via ALB.
 
-### **db-sg**
-- Inbound: 5432 from api-sg  
-**Purpose:** Restrict DB access to API only (zero-trust).
+## api-sg
+- Inbound: 80/443 from `alb-sg`
+- Outbound: 5432 to `db-sg`
+- Outbound: 80 to `metrics-sg`  
+**Purpose:** Enforce zero-trust between API → DB and API → Metrics.
 
----
+## db-sg
+- Inbound: 5432 from `api-sg`  
+**Purpose:** Ensure only API can reach the database.
 
-## 10. Create S3 Bucket for UI
-**Purpose:** Store static frontend assets.  
-- Enable versioning
-
----
-
-## 11. Create CloudFront Distribution
-**Purpose:** CDN for UI, improves latency and serves HTTPS.  
-- Origin: S3 bucket  
-- Domain: `www.acme.com`  
-- SSL: ACM certificate
+## metrics-sg
+- Inbound: 80 from `api-sg`  
+**Purpose:** Allow API to push/pull metrics.
 
 ---
 
-## 12. Create RDS PostgreSQL
-**Purpose:** Backend relational database for the API.  
+# 10. Create RDS PostgreSQL
 - Engine: PostgreSQL  
-- Subnet Group: private subnets  
-- Public access: False  
-- Multi-AZ: Enabled  
-- Security Group: db-sg  
-- Automated backups enabled
+- Multi-AZ: **Enabled**  
+- Subnet group: `private-a`, `private-b`  
+- Public access: **False**  
+- Security Group: `db-sg`  
+- Backup retention: 7–14 days  
+- Enhanced Monitoring: Enabled  
+
+**Purpose:** Primary system-of-record database.
 
 ---
 
-## 13. Create EKS Cluster (or ECS Fargate)
-**Purpose:** Run API containers in a scalable, resilient environment.  
-- Node Groups in private subnets  
-- Recommended add-ons:  
+# 11. Create EKS Cluster (or ECS Fargate)
+**Purpose:** Run UI, API, and Metrics Collector containers.**
+
+### Cluster:
+- Control plane subnet: private  
+- Endpoint access: Private or Public+Private  
+- IAM OIDC enabled  
+- Add-ons:
   - VPC CNI  
   - CoreDNS  
   - kube-proxy  
-  - ALB Ingress Controller  
-  - Cluster Autoscaler
+  - Metrics Server  
+  - AWS Load Balancer Controller  
+  - Cluster Autoscaler  
+
+### Node Groups:
+- Inside private subnets  
+- IAM Policies:
+  - AmazonEKSWorkerNodePolicy  
+  - AmazonEKS_CNI_Policy  
+  - AmazonEC2ContainerRegistryReadOnly  
 
 ---
 
-## 14. Deploy API to EKS
-**Purpose:** Deploy backend application with proper scaling and routing.  
-Includes:
-- Deployment (image: `acme/api`)  
-- Service (ClusterIP)  
-- Ingress (ALB) mapping `api.acme.com`  
-- Secrets: POSTGRES_URL  
-- ConfigMap: METRICS_URL  
+# 12. Deploy UI (Docker Image: `acme/ui`)
+The UI is a **container**, not static files → must run on EKS/ECS.
+
+### Kubernetes Resources:
+- Deployment: runs `acme/ui`
+- Service: ClusterIP on port 80
+- Ingress:
+  - Host: `www.acme.com`
+  - Route → UI service via ALB
+
+### SSL:
+- ACM certificate for `www.acme.com`
+
+---
+
+# 13. Deploy API (Docker Image: `acme/api`)
+### Kubernetes Resources:
+- Deployment: runs `acme/api`
+- Service: ClusterIP (port 80 or 443)
+- Secrets:
+  - POSTGRES_URL
+  - METRICS_URL
+- ConfigMaps (if needed)
 - HPA for autoscaling
 
+### Ingress:
+- Host: `api.acme.com`
+- ALB listener → API service
+
 ---
 
-## 15. Set Up Observability
+# 14. Deploy Metrics Collector
+**Purpose:** Internal-only metrics or APM agent.**
 
-### **Option A — AWS CloudWatch**
-- Logs  
-- Metrics  
-- Dashboards  
-- Alarms  
+### Kubernetes Resources:
+- Deployment (port 80)
+- Service (ClusterIP)
+- Security filtered by `metrics-sg`
 
-### **Option B — Prometheus Stack**
-- Prometheus Server / Agent  
+Only API may reach metrics collector.
+
+---
+
+# 15. Configure Route53
+Create Hosted Zone: **acme.com**
+
+Records:
+- `www.acme.com` → ALB (Alias)
+- `api.acme.com` → ALB (Alias)
+
+---
+
+# 16. Observability
+
+## Option A — AWS CloudWatch
+- Container logs  
+- EKS logs  
+- Metrics dashboard  
+- Alerts (CPU, memory, 5xx, RDS)  
+
+## Option B — Prometheus Stack
+- Prometheus  
 - Grafana  
 - Alertmanager  
-- Node Exporter  
-
-**Purpose:** Maintain visibility, alerting, and operational health.
+- Node / Pod exporters  
 
 ---
 
-## 16. (Optional) Add AWS WAF
-**Purpose:** Protect the application from common web attacks (SQLi, XSS, bots, etc.) when exposed via the ALB.
+# 17. Backups & Resilience
+- RDS automated backups  
+- RDS PITR enabled  
+- EKS cluster backup (Velero optional)  
+- ALB access logs to S3  
+- CloudTrail enabled  
 
 ---
 
-# Final Notes
-Completing this checklist results in a production-ready infrastructure:
-- UI: CloudFront → S3  
-- API: Route53 → ALB → EKS (Pods)  
-- DB: Private RDS PostgreSQL  
-- Metrics: CloudWatch or Prometheus  
-- Secure VPC with public/private subnets, NAT, IGW  
-- Automated scaling, HTTPS, zero-trust networking, and full observability.
+# 18. Security Hardening
+- Zero-trust Security Groups  
+- All workloads in private subnets  
+- No public IP on nodes  
+- ACM TLS everywhere  
+- Least-privilege IAM  
+- OIDC + IRSA  
+- HTTPS termination at ALB  
+- WAF (optional)
+
+---
+
+# Final Architecture Summary
+
+## UI (public)
+User → ALB → UI Deployment → Pods
+
+## API (public)
+User → ALB → API Deployment → Pods → PostgreSQL + Metrics
+
+## Database (private)
+API → RDS PostgreSQL
+
+## Metrics (private)
+API → Metrics Collector
+
+## Networking
+Public subnets:
+- ALB
+- NAT Gateway  
+
+Private subnets:
+- EKS nodes
+- API/UI workloads  
+- RDS  
+- Metrics Collector  
+
+---
+
+This architecture satisfies the evaluation criteria:  
+- Zero-downtime updates  
+- Auto-scaling  
+- Least-privilege + zero-trust  
+- IaC compatibility  
+- Disaster recovery  
+- Observability & cost awareness  
+- Production-grade ingress, TLS, and routing  
