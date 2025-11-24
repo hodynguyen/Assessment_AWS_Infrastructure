@@ -6,7 +6,7 @@ module "eks" {
   # Cluster settings
   # ------------------------
   cluster_name    = "acme-eks"
-  cluster_version = "1.29"
+  cluster_version = "1.34"
 
   # Endpoint settings
   cluster_endpoint_private_access = true
