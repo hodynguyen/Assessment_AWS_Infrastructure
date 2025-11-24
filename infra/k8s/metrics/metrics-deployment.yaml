@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metrics-deployment
+  namespace: default
+  labels:
+    app: metrics
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: metrics
+  template:
+    metadata:
+      labels:
+        app: metrics
+    spec:
+      containers:
+      - name: metrics
+        image: acme/metrics:latest
+        ports:
+        - containerPort: 80
