@@ -56,4 +56,19 @@ module "eks" {
     Environment = "prod"
     Project     = "acme"
   }
+
+  # Enable EKS control plane logs
+  cluster_enabled_log_types = [
+    "api",
+    "audit",
+    "authenticator",
+    "controllerManager",
+    "scheduler"
+  ]
+
+  access_logs {
+    enabled = true
+    bucket  = aws_s3_bucket.alb_logs.bucket
+  }
+
 }
