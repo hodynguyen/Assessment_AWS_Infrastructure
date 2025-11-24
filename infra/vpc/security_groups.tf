@@ -106,3 +106,56 @@ resource "aws_security_group" "api" {
 
   tags = { Name = "acme-api-sg" }
 }
+
+# -----------------------------------------
+# DATABASE SECURITY GROUP
+# -----------------------------------------
+resource "aws_security_group" "db" {
+  name        = "acme-db-sg"
+  description = "Only API can access PostgreSQL"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description     = "API to DB"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.api.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = { Name = "acme-db-sg" }
+}
+
+# -----------------------------------------
+# METRICS COLLECTOR SECURITY GROUP
+# -----------------------------------------
+resource "aws_security_group" "metrics" {
+  name        = "acme-metrics-sg"
+  description = "Only API can send metrics"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description     = "API to metrics collector"
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.api.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = { Name = "acme-metrics-sg" }
+}
+
