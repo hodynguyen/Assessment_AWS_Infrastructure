@@ -1,3 +1,8 @@
+aws acm request-certificate \
+  --domain-name "api.acme.com" \
+  --validation-method DNS \
+  --region ap-southeast-1
+
 kubectl apply -f infra/k8s/api/api-secret.yaml
 kubectl apply -f infra/k8s/api/api-deployment.yaml
 kubectl apply -f infra/k8s/api/api-service.yaml
