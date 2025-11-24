@@ -35,3 +35,29 @@ resource "aws_security_group" "alb" {
     Name = "acme-alb-sg"
   }
 }
+
+# -----------------------------------------
+# UI SECURITY GROUP
+# -----------------------------------------
+resource "aws_security_group" "ui" {
+  name        = "acme-ui-sg"
+  description = "Allow ALB to talk to UI pods"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description     = "Allow ALB to reach UI"
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = { Name = "acme-ui-sg" }
+}
